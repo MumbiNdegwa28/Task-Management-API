@@ -71,22 +71,30 @@ class TaskController extends Controller
 
     /**
      * PATCH /api/tasks/{id}/status
-     * Advance status forward only: pending → in_progress → done.
+     * Advance status forward only: pending - in_progress - done.
      */
     public function updateStatus(Request $request, int $id): JsonResponse
     {
-        $task = Task::findOrFail($id);
-        $next = $task->nextStatus();
+    $task = Task::findOrFail($id);
 
-        if ($next === null) {
-            return response()->json([
-                'message' => 'Task is already done. No further transitions allowed.',
-            ], 422);
+    // Check if task is already at final status
+        if ($task->status === 'done') {
+        return response()->json([
+            'message' => 'Task is already done. No further transitions allowed.',
+        ], 422);
         }
 
-        $request->validate([
-            'status' => ['required', Rule::in([$next])],
-        ]);
+    $next = $task->nextStatus();
+
+    // Explicitly reject if they try to send anything other than the next valid status
+        if ($request->status !== $next) {
+        return response()->json([
+            'message'  => 'Invalid status transition.',
+            'current'  => $task->status,
+            'allowed'  => $next,
+            'provided' => $request->status,
+        ], 422);
+        }
 
         $task->update(['status' => $next]);
 
