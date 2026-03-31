@@ -2,10 +2,21 @@
 
 A REST API built with Laravel 13 and MySQL for managing tasks with priority-based sorting, strict status transitions, and a daily report endpoint.
 
+## Live URL
+```
+https://task-management-api-production-a0e2.up.railway.app
+```
+
 ## Stack
-- PHP 8.3
-- Laravel 13
+- PHP 8.3 / Laravel 13
 - MySQL 8
+- Hosted on Railway
+
+## Database
+MySQL. Import the included dump file:
+```bash
+mysql -u root -p task_management < task_management_dump.sql
+```
 
 ## Local Setup
 ```bash
@@ -16,7 +27,7 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-Edit `.env` with your MySQL credentials:
+Edit `.env`:
 ```env
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
@@ -31,75 +42,165 @@ php artisan db:seed
 php artisan serve
 ```
 
-API is available at `http://localhost:8000/api/`
+API runs at `http://localhost:8000/api/`
 
 ## Deploy to Railway
 
 1. Push repo to GitHub
 2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
-3. Add a **MySQL** plugin from the Railway dashboard
-4. Set these environment variables in Railway → Variables:
+3. Add a **MySQL** plugin
+4. Set these variables on the app service using values from the MySQL plugin Connect tab:
 ```
 DB_CONNECTION=mysql
-DB_HOST=${{MySQL.MYSQL_HOST}}
-DB_PORT=${{MySQL.MYSQL_PORT}}
-DB_DATABASE=${{MySQL.MYSQL_DATABASE}}
-DB_USERNAME=${{MySQL.MYSQL_USER}}
-DB_PASSWORD=${{MySQL.MYSQL_PASSWORD}}
-APP_KEY=        ← paste your local APP_KEY value
+DB_HOST=         - from MySQL service Connect tab
+DB_PORT=         - from MySQL service Connect tab
+DB_DATABASE=railway
+DB_USERNAME=root
+DB_PASSWORD=     - from MySQL service Connect tab
+APP_KEY=         - paste your local APP_KEY value
 APP_ENV=production
+APP_DEBUG=false
 ```
-
-5. Add `railway.json` to project root (already included in this repo)
 
 ## API Endpoints
 
-### Create a task
+### 1. Create a task
 ```
-POST /api/tasks
+POST https://task-management-api-production-a0e2.up.railway.app/api/tasks
 Content-Type: application/json
 
 {
     "title": "Fix login bug",
-    "due_date": "2026-04-05",
+    "due_date": "2026-04-10",
     "priority": "high"
 }
 ```
+Response `201`:
+```json
+{
+    "data": {
+        "id": 1,
+        "title": "Fix login bug",
+        "due_date": "2026-04-10",
+        "priority": "high",
+        "status": "pending",
+        "created_at": "2026-04-01T00:00:00.000000Z",
+        "updated_at": "2026-04-01T00:00:00.000000Z"
+    }
+}
+```
 
-### List tasks
+### 2. List all tasks
 ```
-GET /api/tasks
-GET /api/tasks?status=pending
+GET https://task-management-api-production-a0e2.up.railway.app/api/tasks
+```
+Sorted by priority (high - medium - low), then due_date ascending.
+
+Response `200`:
+```json
+{
+    "data": [
+        {
+            "id": 1,
+            "title": "Fix login bug",
+            "due_date": "2026-04-10",
+            "priority": "high",
+            "status": "pending"
+        }
+    ]
+}
 ```
 
-### Advance task status
+### 3. List tasks filtered by status
 ```
-PATCH /api/tasks/{id}/status
+GET https://task-management-api-production-a0e2.up.railway.app/api/tasks?status=pending
+GET https://task-management-api-production-a0e2.up.railway.app/api/tasks?status=in_progress
+GET https://task-management-api-production-a0e2.up.railway.app/api/tasks?status=done
+```
+
+### 4. Advance task status
+```
+PATCH https://task-management-api-production-a0e2.up.railway.app/api/tasks/{id}/status
 Content-Type: application/json
 
 {
     "status": "in_progress"
 }
 ```
+Status can only move forward: `pending → in_progress → done`. Cannot skip or revert.
 
-### Delete a task (only done tasks)
-```
-DELETE /api/tasks/{id}
+Response `200`:
+```json
+{
+    "data": {
+        "id": 1,
+        "title": "Fix login bug",
+        "status": "in_progress"
+    }
+}
 ```
 
-### Daily report
+Invalid transition response `422`:
+```json
+{
+    "message": "Invalid status transition.",
+    "current": "pending",
+    "allowed": "in_progress",
+    "provided": "done"
+}
 ```
-GET /api/tasks/report?date=2026-04-05
+
+### 5. Delete a task
+```
+DELETE https://task-management-api-production-a0e2.up.railway.app/api/tasks/{id}
+```
+Only tasks with status `done` can be deleted.
+
+Response `200`:
+```json
+{
+    "message": "Task deleted successfully."
+}
+```
+
+Attempting to delete a non-done task returns `403`:
+```json
+{
+    "message": "Forbidden. Only tasks with status \"done\" can be deleted."
+}
+```
+
+### 6. Daily report (bonus)
+```
+GET https://task-management-api-production-a0e2.up.railway.app/api/tasks/report?date=2026-04-10
+```
+Returns task counts grouped by priority and status for the given date.
+
+Response `200`:
+```json
+{
+    "date": "2026-04-10",
+    "summary": {
+        "high":   {"pending": 2, "in_progress": 1, "done": 0},
+        "medium": {"pending": 1, "in_progress": 0, "done": 3},
+        "low":    {"pending": 0, "in_progress": 0, "done": 1}
+    }
+}
 ```
 
 ## Business Rules
-- Title must be unique per due_date
-- due_date must be today or in the future
-- Status can only move forward: `pending → in_progress → done`
-- Only `done` tasks can be deleted (returns `403` otherwise)
 
-## Database
-MySQL. Import the included dump file:
-```bash
-mysql -u root -p task_management < task_management_dump.sql
-```
+- `title` must be unique per `due_date` — same title on different dates is allowed
+- `due_date` must be today or in the future
+- `priority` must be one of: `low`, `medium`, `high`
+- Status transitions are strictly one-way: `pending → in_progress → done`
+- Skipping or reverting status returns `422`
+- Only tasks with status `done` can be deleted — returns `403` otherwise
+
+## Evaluation Notes
+
+- Business rules enforced via Laravel validation and Eloquent model logic
+- `CASE` expression used for cross-database compatible priority sorting
+- Status transition logic lives in the `Task` model via `nextStatus()` method
+- All responses return consistent JSON regardless of request headers
+- Migration includes a composite unique index on `(title, due_date)`
