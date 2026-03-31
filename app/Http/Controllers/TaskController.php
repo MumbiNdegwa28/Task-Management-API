@@ -21,6 +21,7 @@ class TaskController extends Controller
             'status' => ['sometimes', Rule::in(['pending', 'in_progress', 'done'])],
         ]);
 
+        try {
         $tasks = Task::query()
             ->when($request->filled('status'), fn($q) =>
                 $q->where('status', $request->status)
@@ -29,14 +30,21 @@ class TaskController extends Controller
             ->orderBy('due_date')
             ->get();
 
-        if ($tasks->isEmpty()) {
+            if ($tasks->isEmpty()) {
             return response()->json([
                 'message' => 'No tasks found.',
                 'data'    => [],
             ], 200);
-        }
+            }
 
-        return response()->json(['data' => $tasks], 200);
+            return response()->json(['data' => $tasks], 200);
+
+        } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Failed to retrieve tasks.',
+            'error'   => $e->getMessage(),
+        ], 500);
+        }
     }
 
     /**
